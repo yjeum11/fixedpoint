@@ -25,7 +25,7 @@ noncomputable section
 variable {X : Type} [NX : Nonempty X] [MetricSpace X] [CompleteSpace X]
 
 def IsContraction (f : X → X) : Prop :=
-  ∃ q : NNReal, q < 1 ∧ ∀ x y : X, dist (f x) (f y) ≤ q * dist x y
+  ∃ q > 0, q < 1 ∧ ∀ x y : X, dist (f x) (f y) ≤ q * dist x y
 
 def IsFixedPoint (f : X → X) (p : X) : Prop :=
   f p = p
@@ -43,20 +43,15 @@ theorem exists_fixed_point_of_isContraction (f : X → X) (hf : IsContraction f)
     induction' n with n ih
     . simp
     rw [T] at *
-    rcases hf with ⟨qle1, hq⟩
+    rcases hf with ⟨qgt0, qle1, hq⟩
     have := hq (f (T f n)) (T f n)
     apply le_trans
     apply this
     rw [pow_succ]
     nth_rw 3 [mul_comm]
-    by_cases h: 0 = q
-    . rw [←h]; simp
-    . rw [mul_assoc, mul_le_mul_left]
-      apply ih
-      rw [NNReal.coe_pos]
-      apply lt_of_le_of_ne
-      simp only [zero_le]
-      apply h
+    rw [mul_assoc, mul_le_mul_left]
+    apply ih
+    apply qgt0
 
   have Tdist' : ∀ n p, 1 ≤ p → dist (T f (n+p)) (T f n) ≤ dist (T f 1) (T f 0) * (1-q)⁻¹ * q^n  := by
     intro n p hp
@@ -76,26 +71,36 @@ theorem exists_fixed_point_of_isContraction (f : X → X) (hf : IsContraction f)
         _ = (∑ k ∈ range p, q^k) * dist (T f 1) (T f 0) * q^n := by
               simp_rw [pow_add, mul_assoc]
               rw [←mul_sum, ←sum_mul]
-              simp
               ring
         _ ≤ (∑' (k : ℕ), q^k) * dist (T f 1) (T f 0) * q^n := by
               apply mul_le_mul
               apply mul_le_mul
-              . gcongr
-                apply sum_le_tsum
+              . apply sum_le_tsum
                 intro i hi
-                simp
-                apply NNReal.summable_geometric
-                exact hf.1
+                . apply pow_nonneg
+                  apply le_of_lt hf.1
+                apply summable_geometric_of_lt_one
+                apply le_of_lt hf.1
+                apply hf.2.1
               . simp
               . apply dist_nonneg
+              . apply tsum_nonneg
+                intro i
+                apply pow_nonneg
+                apply le_of_lt hf.1
               . simp
-              . simp
-              . simp
-              apply mul_nonneg <;> simp [dist_nonneg]
+              . apply pow_nonneg; apply le_of_lt hf.1
+              . apply mul_nonneg 
+                . apply tsum_nonneg
+                  intro i
+                  apply pow_nonneg
+                  apply le_of_lt hf.1
+                . apply dist_nonneg
+                
         _ = (1-q)⁻¹ * dist (T f 1) (T f 0) * q^n := by
-              rw [tsum_geometric_nnreal]
-              exact hf.1
+              rw [tsum_geometric_of_lt_one]
+              apply le_of_lt hf.1
+              apply hf.2.1
     simp [mul_comm]
   
   have Tconv_aux (m n : ℕ) (hmn : m > n) : dist (T f m) (T f n) ≤ dist (T f 1) (T f 0) * (1-q)⁻¹ * q^n := by
@@ -134,7 +139,7 @@ theorem exists_fixed_point_of_isContraction (f : X → X) (hf : IsContraction f)
       . rw [←dist_ne_zero]
         simpa
       . simp
-        exact hf.1
+        exact hf.2.1
 
     refine (lt_div_iff₀' ?h.hc).mp ?h.a
     . apply hA
@@ -152,9 +157,7 @@ theorem exists_fixed_point_of_isContraction (f : X → X) (hf : IsContraction f)
       simpa
 
     refine (pow_lt_iff_lt_log ?h.a.hx ?h.a.hy).mpr ?h.a.a
-    . have : 0 ≤ q := by simp
-      simp 
-      apply lt_of_le_of_ne this hq
+    . apply hf.1
     . apply div_pos
       apply hε
       apply hA
@@ -167,18 +170,8 @@ theorem exists_fixed_point_of_isContraction (f : X → X) (hf : IsContraction f)
     dsimp [N, A]
     linarith
     apply log_neg
-    apply lt_of_le_of_ne
-    . simp
-    simp
-    . simp at hq
-      rw [←coe_toNNReal 0]
-      by_contra x
-      rw [NNReal.coe_inj] at x
-      apply hq
-      rw [←x]
-      simp
-      simp
     apply hf.1
+    apply hf.2.1
 
   apply cauchySeq_tendsto_of_complete at Tconv
   rcases Tconv with ⟨L, hL⟩
@@ -194,36 +187,6 @@ theorem exists_fixed_point_of_isContraction (f : X → X) (hf : IsContraction f)
 
     rcases hL (ε/2) ep with ⟨N, hN⟩
 
-    by_cases hq : q = 0
-    . have : ∀ n ≥ N, dist L (f L) < ε := by 
-        intro n hn
-        calc dist L (f L) ≤ dist L (T f (n+1)) + dist (T f (n+1)) (f L) := by exact dist_triangle L (T f (n+1)) (f L)
-          _ = dist L (T f (n+1)) + dist (f (T f n)) (f L) := by 
-            simp
-            dsimp [T]
-          _ ≤ dist L (T f (n+1)) + q * dist (T f n) L := by 
-            apply add_le_add_left
-            apply hf.2
-        rw [hq]
-        simp
-        rw [dist_comm]
-        trans (ε / 2)
-        . apply hN
-          linarith
-        linarith
-      apply this N _
-      linarith
-    have hq' : q > (0 : ℝ) := by 
-      apply lt_of_le_of_ne
-      simp
-      rw [←coe_toNNReal 0]
-      by_contra x
-      rw [NNReal.coe_inj] at x
-      apply hq
-      rw [←x]
-      simp
-      simp
-
     have : ∀ n ≥ N, dist L (f L) < ε := by 
       intro n hn
       calc dist L (f L) ≤ dist L (T f (n+1)) + dist (T f (n+1)) (f L) := by exact dist_triangle L (T f (n+1)) (f L)
@@ -232,19 +195,19 @@ theorem exists_fixed_point_of_isContraction (f : X → X) (hf : IsContraction f)
           dsimp [T]
         _ ≤ dist L (T f (n+1)) + q * dist (T f n) L := by 
           apply add_le_add_left
-          apply hf.2
+          apply hf.2.2
         _ < ε/2 + q * ε/2 := by
           apply add_lt_add
           . have : n + 1 ≥ N := by linarith
             rw [dist_comm]
             apply hN (n+1) this
-          . rw [mul_div_assoc, mul_lt_mul_left hq']
+          . rw [mul_div_assoc, mul_lt_mul_left hf.1]
             apply hN n hn
 
       have hqε : q * (ε / 2) < ε / 2 := by
         apply mul_lt_of_lt_one_left
         . apply ep
-        . exact hf.1
+        . exact hf.2.1
 
       have : ε = ε / 2 + ε / 2 := by linarith
       nth_rw 3 [this]
@@ -284,7 +247,7 @@ theorem unique_fixed_point_of_isContraction (f : X → X) (hf : IsContraction f)
 
   dsimp [IsContraction] at hf
   -- rcases hf with ⟨q, hq⟩
-  let q : NNReal := choose hf
+  let q : ℝ := choose hf
   let hq := choose_spec hf
 
   dsimp [IsFixedPoint] at *
@@ -293,15 +256,24 @@ theorem unique_fixed_point_of_isContraction (f : X → X) (hf : IsContraction f)
     dsimp [TheFixedPoint]
     apply h
 
-  -- calc dist p (TheFixedPoint f hf) = 
-  --           dist (f p) (f (TheFixedPoint f hf)) := by
-  --             rw [fix, hp]
-  --       _ ≤ q * dist p (TheFixedPoint f hf) := by 
-              
-                            
-  sorry
+  have : dist p (TheFixedPoint f hf) ≤ q * dist p (TheFixedPoint f hf) := by 
+    calc dist p (TheFixedPoint f hf) = 
+      dist (f p) (f (TheFixedPoint f hf)) := by rw [hp, fix]
+    _ ≤ q * dist p (TheFixedPoint f hf) := by apply hq.2.2
 
-    
+  by_cases h : dist p (TheFixedPoint f hf) = 0
+  . exact h
+  . by_contra
+    suffices dist p (TheFixedPoint f hf) > q * dist p (TheFixedPoint f hf) by
+      linarith
+    rw [mul_comm]
+    have : dist p (TheFixedPoint f hf) > 0 := by 
+      apply lt_of_le_of_ne
+      apply dist_nonneg
+      exact fun a ↦ h (id (Eq.symm a))
+    apply mul_lt_of_lt_one_right
+    apply this
+    apply hq.2.1
 
 end
 end project
